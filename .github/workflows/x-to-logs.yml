@@ -1,0 +1,42 @@
+name: X: fetch & log
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_time:
+        description: "ISO8601 UTC (e.g. 2025-06-01T00:00:00Z)"
+        required: false
+      end_time:
+        description: "ISO8601 UTC (e.g. 2025-06-30T23:59:59Z)"
+        required: false
+      limit:
+        description: "Max tweets to print (<=300 推奨)"
+        required: false
+        default: "100"
+  schedule:
+    - cron: "0 */3 * * *" # 3時間おき（必要なら変更/削除）
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install deps
+        run: npm i node-fetch@3
+
+      - name: Fetch tweets and print to logs
+        env:
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+          X_USER_ID: ${{ vars.X_USER_ID }}
+          # workflow_dispatch inputs → スクリプトに渡す
+          INPUT_START_TIME: ${{ github.event.inputs.start_time }}
+          INPUT_END_TIME:   ${{ github.event.inputs.end_time }}
+          INPUT_LIMIT:      ${{ github.event.inputs.limit }}
+        run: node fetch_x_to_logs.mjs
