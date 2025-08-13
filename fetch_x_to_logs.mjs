@@ -3,13 +3,41 @@ import fetch from "node-fetch";
 
 /**
  * Inputs: start_time / end_time (ISO8601, UTC) を指定すると期間で取得
- * 未指定なら直近の投稿（max_results=10）だけ取ってログに表示
+ * 未指定なら「実行時点の1日前〜実行時点」をデフォルト適用（1ページ最大100件、ページング合算で LIMIT まで）
  */
 const BEARER = process.env.X_BEARER_TOKEN;
 const USER_ID = process.env.X_USER_ID || process.env.INPUT_X_USER_ID; // どちらでも
 const START = process.env.INPUT_START_TIME || process.env.START_TIME || ""; // 例: 2025-06-01T00:00:00Z
 const END   = process.env.INPUT_END_TIME   || process.env.END_TIME   || "";
 const LIMIT = Number(process.env.INPUT_LIMIT || 100); // 1実行の上限件数（ページング合算）
+
+// 期間の決定ロジック
+function computeWindow() {
+  const now = new Date();
+  const endEnv = (END || "").trim();
+  const startEnv = (START || "").trim();
+
+  let endDate;
+  if (endEnv) {
+    const parsed = new Date(endEnv);
+    endDate = isNaN(parsed.getTime()) ? now : parsed;
+  } else {
+    endDate = now;
+  }
+
+  let startDate;
+  if (startEnv) {
+    const parsed = new Date(startEnv);
+    startDate = isNaN(parsed.getTime()) ? new Date(endDate.getTime() - 24 * 60 * 60 * 1000) : parsed;
+  } else {
+    // START が無い場合は END の24時間前（END も無ければ now の24時間前）
+    startDate = new Date(endDate.getTime() - 24 * 60 * 60 * 1000);
+  }
+
+  return { startISO: startDate.toISOString(), endISO: endDate.toISOString() };
+}
+
+const WINDOW = computeWindow();
 
 if (!BEARER || !USER_ID) {
   console.error("Missing X_BEARER_TOKEN or X_USER_ID.");
@@ -21,8 +49,8 @@ const headers = { Authorization: `Bearer ${BEARER}` };
 function buildUrl(pagination_token = "") {
   const url = new URL(`https://api.twitter.com/2/users/${USER_ID}/tweets`);
   // 期間指定（省略可）
-  if (START) url.searchParams.set("start_time", START);
-  if (END)   url.searchParams.set("end_time", END);
+  url.searchParams.set("start_time", WINDOW.startISO);
+  url.searchParams.set("end_time", WINDOW.endISO);
   url.searchParams.set("max_results", "100"); // 1ページ最大
   url.searchParams.set("tweet.fields", "created_at,public_metrics");
   if (pagination_token) url.searchParams.set("pagination_token", pagination_token);
@@ -41,7 +69,7 @@ async function main() {
 
   console.log("=== X API fetch start ===");
   console.log(`USER_ID=${USER_ID}`);
-  if (START || END) console.log(`WINDOW: ${START || "-"} → ${END || "-"}`);
+  console.log(`WINDOW: ${WINDOW.startISO} → ${WINDOW.endISO}`);
 
   while (true) {
     page++;
