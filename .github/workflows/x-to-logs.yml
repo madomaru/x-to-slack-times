@@ -1,4 +1,4 @@
-name: X: fetch & log
+name: "X: fetch & log"
 
 on:
   workflow_dispatch:
